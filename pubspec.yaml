@@ -19,6 +19,7 @@ dependencies:
 
   # State & penyimpanan
   shared_preferences: ^2.5.3
+  flutter_blue_plus: ^2.3.14
 
   # Untuk tahap berikutnya (koneksi ESP32)
   # flutter_blue_plus: ^1.35.5

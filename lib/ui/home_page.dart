@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../main.dart' show appState;
+import '../ble_service.dart';
 
 class HomePage extends StatelessWidget {
   final VoidCallback onOpenMap;
@@ -103,10 +104,22 @@ class HomePage extends StatelessWidget {
               decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
             ),
             const SizedBox(height: 20),
+            // Tombol "Kirim ke ESP32" yang ganda sudah dihapus, sisa satu yang benar:
             FilledButton(
-              onPressed: () {
-                // TODO: tulis ssid & pass ke karakteristik BLE ESP32
-                Navigator.pop(ctx);
+              onPressed: () async {
+                final ssidText = ssid.text.trim();
+                final passText = pass.text.trim();
+
+                if (ssidText.isNotEmpty && passText.isNotEmpty) {
+                  await bleService.sendWifiCredentials(ssidText, passText);
+                  
+                  if (ctx.mounted) {
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Kredensial dikirim ke ESP32')),
+                    );
+                  }
+                }
               },
               child: const Text('Kirim ke ESP32'),
             ),

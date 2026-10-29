@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../ble_service.dart';
 
 enum RouteProfile { driving, walking, cycling }
 
@@ -30,11 +31,11 @@ class AppState extends ChangeNotifier {
   String notificationDuration = 'Dynamic (auto)';
   int whitelistedApps = 1;
 
-  // ESP32 status (TODO: hubungkan ke flutter_blue_plus + HTTP ke ESP32)
-  String deviceName = 'ESP32-NAV-FD8C';
-  bool bleConnected = true;
-  String? wifiIp = '10.146.223.212';
-  bool syncReady = true;
+  // ESP32 status (Real data via BLE)
+  String deviceName = 'Tidak Terhubung';
+  bool bleConnected = false;
+  String? wifiIp;
+  bool syncReady = false;
 
   // ESP32 preferences
   final Map<String, String> esp = {
@@ -72,14 +73,42 @@ class AppState extends ChangeNotifier {
 
   String get statusLabel => !bleConnected ? 'Disconnected' : (syncReady ? 'Ready' : 'Syncing');
 
-  void toggleConnection() => update(() {
-        bleConnected = !bleConnected;
-        if (!bleConnected) {
-          wifiIp = null;
-          syncReady = false;
+  void toggleConnection() async {
+    if (bleConnected) {
+      // Putuskan koneksi jika sedang terhubung
+      await bleService.connectedDevice?.disconnect();
+      update(() {
+        bleConnected = false;
+        wifiIp = null;
+        syncReady = false;
+        deviceName = 'Tidak Terhubung';
+      });
+    } else {
+      // Mulai mencari dan menyambung ke perangkat
+      update(() {
+        deviceName = 'Mencari ESP32...';
+      });
+      
+      await bleService.connectToEsp32();
+      
+      // Tunggu proses scanning (karena diatur 4 detik di ble_service)
+      Future.delayed(const Duration(seconds: 5), () {
+        if (bleService.connectedDevice != null) {
+          // Berhasil connect
+          update(() {
+            bleConnected = true;
+            syncReady = true;
+            deviceName = bleService.connectedDevice!.platformName; // Ambil nama asli dari ESP32
+          });
         } else {
-          wifiIp = '10.146.223.212';
-          syncReady = true;
+          // Gagal menemukan ESP32
+          update(() {
+            bleConnected = false;
+            syncReady = false;
+            deviceName = 'Gagal Terhubung';
+          });
         }
       });
+    }
+  }
 }
