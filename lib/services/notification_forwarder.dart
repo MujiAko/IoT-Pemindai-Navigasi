@@ -24,7 +24,7 @@ class NotificationForwarder {
   void ensureListening() {
     if (_sub != null) return;
     _sub = NotificationListenerService.notificationsStream.listen(
-      (event) => _handle(event.packageName, event.title, event.content, event.hasRemoved ?? false),
+      (event) => _handle(event.packageName, event.title, event.content, event.hasRemoved),
       onError: (_) {},
     );
   }
