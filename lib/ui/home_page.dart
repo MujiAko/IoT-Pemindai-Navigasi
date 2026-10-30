@@ -39,7 +39,7 @@ class HomePage extends StatelessWidget {
                       ),
                       const SizedBox(height: 20),
                       _InfoRow('BLE', s.bleConnected ? 'Connected' : 'Disconnected'),
-                      _InfoRow('Wi-Fi', s.wifiIp ?? '—'),
+                      _InfoRow('Wi-Fi', s.wifiIp ?? (s.wifiSentSsid != null ? 'Terkirim: ${s.wifiSentSsid}' : '—')),
                       _InfoRow('Sync', s.syncReady ? 'Ready' : '—'),
                     ],
                   ),
@@ -90,7 +90,7 @@ class HomePage extends StatelessWidget {
           children: [
             Text('Hotspot Setup', style: Theme.of(ctx).textTheme.titleLarge),
             const SizedBox(height: 4),
-            Text('Kirim kredensial Wi-Fi ke ESP32 lewat BLE.',
+            Text('Kirim kredensial Wi-Fi ke ESP32 lewat BLE. Pakai jaringan/hotspot 2,4 GHz (ESP32 tidak mendukung 5 GHz).',
                 style: Theme.of(ctx).textTheme.bodyMedium),
             const SizedBox(height: 20),
             TextField(
@@ -108,17 +108,28 @@ class HomePage extends StatelessWidget {
             FilledButton(
               onPressed: () async {
                 final ssidText = ssid.text.trim();
-                final passText = pass.text.trim();
+                final passText = pass.text; // jangan di-trim: spasi bisa bagian dari password
+                final messenger = ScaffoldMessenger.of(context);
+                final nav = Navigator.of(ctx);
 
-                if (ssidText.isNotEmpty && passText.isNotEmpty) {
-                  await bleService.sendWifiCredentials(ssidText, passText);
-                  
-                  if (ctx.mounted) {
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      const SnackBar(content: Text('Kredensial dikirim ke ESP32')),
-                    );
-                  }
+                if (ssidText.isEmpty) return;
+                if (ssidText.contains('|')) {
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text("SSID tidak boleh mengandung karakter '|'")),
+                  );
+                  return;
+                }
+
+                final ok = await bleService.sendWifiCredentials(ssidText, passText);
+                nav.pop();
+                messenger.showSnackBar(SnackBar(
+                  content: Text(ok
+                      ? 'Terkirim. ESP32 mencoba tersambung (sekitar 20 detik)…'
+                      : 'Gagal mengirim. Pastikan Bluetooth tersambung ke ESP32.'),
+                ));
+                if (ok) {
+                  appState.markWifiSent(ssidText);
+                  appState.startWifiPolling();
                 }
               },
               child: const Text('Kirim ke ESP32'),

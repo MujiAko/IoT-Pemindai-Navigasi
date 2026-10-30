@@ -60,12 +60,14 @@ class _MapPageState extends State<MapPage> {
         _me = ll;
         if (p.speed > 1) _heading = p.heading;
       });
+      appState.nav.updatePosition(ll); // instruksi belok ke ESP32
       if (_follow) _map.move(ll, _map.camera.zoom);
     });
 
     final p = await Geolocator.getCurrentPosition();
     final ll = LatLng(p.latitude, p.longitude);
     setState(() => _me = ll);
+    appState.nav.updatePosition(ll);
     _map.move(ll, 15);
   }
 
@@ -121,6 +123,7 @@ class _MapPageState extends State<MapPage> {
       final r = await MapService.route(from, to, appState.profile);
       if (!mounted) return;
       setState(() => _route = r);
+      if (appState.nav.active) appState.nav.stop(); // rute berubah, mulai ulang manual
       if (r != null) {
         _map.fitCamera(CameraFit.coordinates(
           coordinates: r.points,
@@ -136,10 +139,13 @@ class _MapPageState extends State<MapPage> {
     if (mounted) setState(() => _loadingRoute = false);
   }
 
-  void _clear() => setState(() {
-        _dest = null;
-        _route = null;
-      });
+  void _clear() {
+    appState.nav.stop();
+    setState(() {
+      _dest = null;
+      _route = null;
+    });
+  }
 
   void _recenter() {
     setState(() => _follow = true);
@@ -320,9 +326,14 @@ class _MapPageState extends State<MapPage> {
   }
 
   void _startNavigation() {
-    // TODO: kirim rute + posisi live ke ESP32 (BLE untuk instruksi, Wi-Fi untuk gambar peta).
     setState(() => _follow = true);
     if (_me != null) _map.move(_me!, 17);
+    // Instruksi belok dikirim ke ESP32 lewat BLE. Pengiriman gambar peta lewat Wi-Fi
+    // menunggu penerima gambar di firmware (belum ada).
+    final r = _route;
+    if (r == null) return;
+    appState.nav.start(r);
+    if (_me != null) appState.nav.updatePosition(_me!);
   }
 }
 
@@ -427,7 +438,32 @@ class _RoutePanel extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        FilledButton(onPressed: onStart, child: const Text('Start Navigation')),
+        ListenableBuilder(
+          listenable: Listenable.merge([appState.nav, appState]),
+          builder: (_, _) {
+            final nav = appState.nav;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (nav.active && nav.lastText.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(nav.lastText, style: tt.titleSmall, textAlign: TextAlign.center),
+                  ),
+                if (nav.active && !appState.bleConnected)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text('ESP32 belum terhubung, instruksi tidak terkirim',
+                        style: tt.bodySmall?.copyWith(color: cs.error), textAlign: TextAlign.center),
+                  ),
+                FilledButton(
+                  onPressed: nav.active ? nav.stop : onStart,
+                  child: Text(nav.active ? 'Stop Navigation' : 'Start Navigation'),
+                ),
+              ],
+            );
+          },
+        ),
       ],
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../main.dart' show appState;
 import '../state/app_state.dart';
+import 'notification_apps_page.dart';
 
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
@@ -98,7 +99,7 @@ class _AppTab extends StatelessWidget {
                 s.notificationAccess ? Icons.check_circle_rounded : Icons.error_outline,
                 color: Theme.of(context).colorScheme.primary,
               ),
-              onTap: () {/* TODO: buka pengaturan Notification Listener Android */},
+              onTap: () => appState.requestNotificationAccess(),
             ),
             _Tile(
               icon: Icons.timer_outlined,
@@ -114,7 +115,9 @@ class _AppTab extends StatelessWidget {
               icon: Icons.apps_rounded,
               title: 'Notification apps',
               subtitle: '${s.whitelistedApps} app whitelisted',
-              onTap: () {/* TODO: halaman pilih aplikasi (installed_apps) */},
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const NotificationAppsPage()),
+              ),
             ),
           ],
         );
@@ -148,7 +151,10 @@ class _EspTab extends StatelessWidget {
             _Tile(
               icon: Icons.wifi_rounded,
               title: 'Wi-Fi',
-              subtitle: s.wifiIp ?? 'Not connected',
+              subtitle: s.wifiIp ??
+                  (s.wifiSentSsid != null
+                      ? 'Kredensial terkirim: ${s.wifiSentSsid} (status tidak dilaporkan)'
+                      : 'Not connected'),
               trailing: dot(s.wifiIp != null),
             ),
             _espTile(context, 'WiFi mode', Icons.smartphone_rounded,
@@ -174,8 +180,8 @@ class _EspTab extends StatelessWidget {
                     FilledButton(
                       style: FilledButton.styleFrom(minimumSize: const Size(100, 44)),
                       onPressed: () {
-                        // TODO: kirim perintah restart via BLE/HTTP
                         Navigator.pop(ctx);
+                        appState.restartEsp();
                       },
                       child: const Text('Restart'),
                     ),
@@ -198,8 +204,7 @@ class _EspTab extends StatelessWidget {
       title: key,
       subtitle: appState.esp[key]!,
       onTap: () => _pick<String>(context, key, options, appState.esp[key]!, (v) => v, (v) {
-        appState.update(() => appState.esp[key] = v);
-        // TODO: kirim konfigurasi ke ESP32
+        appState.setEsp(key, v); // simpan + kirim ke ESP32 kalau terhubung
       }),
     );
   }

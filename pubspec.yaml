@@ -20,6 +20,10 @@ dependencies:
   # State & penyimpanan
   shared_preferences: ^2.5.3
   flutter_blue_plus: ^2.3.14
+  device_info_plus: ^13.3.0
+  battery_plus: ^7.1.2
+  notification_listener_service: ^1.0.0
+  installed_apps: ^2.2.1
 
   # Untuk tahap berikutnya (koneksi ESP32)
   # flutter_blue_plus: ^1.35.5
