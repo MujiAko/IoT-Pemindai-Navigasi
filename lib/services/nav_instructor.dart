@@ -7,6 +7,8 @@ import 'map_service.dart';
 /// Mengirim instruksi belok-per-belok ke ESP32 sebagai teks.
 /// Firmware yang ada belum punya characteristic khusus navigasi, jadi `bleService.sendNav`
 /// memakai characteristic notifikasi dengan awalan "NAV: " (tampil di halaman Notify ESP32).
+/// Selain itu, info bar bawah LCD (sisa jarak, kecepatan, ETA) dikirim lewat
+/// characteristic c209 (`bleService.sendNavInfo`, firmware v1.2.2).
 class NavInstructor extends ChangeNotifier {
   static const _distance = Distance();
 
@@ -14,6 +16,14 @@ class NavInstructor extends ChangeNotifier {
   int _next = 1; // indeks langkah (manuver) berikutnya
   String? _lastSent;
   DateTime _lastSentAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // Buat info bar bawah LCD (c209): kecepatan + sisa jarak + ETA.
+  LatLng? _lastPos;
+  DateTime _lastPosAt = DateTime.fromMillisecondsSinceEpoch(0);
+  double _speedKmh = 0;
+  String? _lastNavInfoSent;
+  DateTime _lastNavInfoAt = DateTime.fromMillisecondsSinceEpoch(0);
+  bool _arrived = false;
 
   bool active = false;
   String lastText = '';
@@ -27,6 +37,10 @@ class NavInstructor extends ChangeNotifier {
     _next = 1;
     _lastSent = null;
     lastText = '';
+    _lastPos = null;
+    _speedKmh = 0;
+    _lastNavInfoSent = null;
+    _arrived = false;
     active = true;
     notifyListeners();
   }
@@ -36,13 +50,40 @@ class NavInstructor extends ChangeNotifier {
     active = false;
     _route = null;
     lastText = '';
+    // Bar bawah LCD: sampai tujuan tampil 0, batal navigasi tampil "-".
+    if (bleService.isConnected) {
+      unawaited(bleService.sendNavInfo(_arrived ? '0|0|0' : '-1|-1|-1'));
+    }
+    _arrived = false;
+    _lastNavInfoSent = null;
     notifyListeners();
   }
 
-  void updatePosition(LatLng me) {
+  void updatePosition(LatLng me, {double? speedMps}) {
     final route = _route;
     if (!active || route == null) return;
     final steps = route.steps;
+
+    // Kecepatan: pakai speed GPS kalau caller ngasih, kalau tidak hitung
+    // dari perpindahan posisi (dengan peredam noise GPS saat diam).
+    final now = DateTime.now();
+    if (speedMps != null) {
+      _speedKmh = speedMps * 3.6;
+      _lastPos = me;
+      _lastPosAt = now;
+    } else if (_lastPos == null) {
+      _lastPos = me;
+      _lastPosAt = now;
+    } else {
+      final dt = now.difference(_lastPosAt).inMilliseconds / 1000.0;
+      if (dt >= 1.0) {
+        final moved = _distance.distance(_lastPos!, me);
+        final raw = moved < 3 ? 0.0 : (moved / dt) * 3.6;
+        _speedKmh = _speedKmh * 0.6 + raw * 0.4; // rata-rata bergerak
+        _lastPos = me;
+        _lastPosAt = now;
+      }
+    }
 
     // Maju ke manuver berikutnya kalau titik ini sudah dilewati (< 25 m).
     var moved = false;
@@ -59,6 +100,7 @@ class NavInstructor extends ChangeNotifier {
       lastText = 'Tiba di tujuan';
       _send(lastText, force: true);
       onStepChanged?.call();
+      _arrived = true;
       stop();
       return;
     }
@@ -72,6 +114,15 @@ class NavInstructor extends ChangeNotifier {
       notifyListeners();
     }
     _send(text);
+
+    // Info bar bawah LCD (c209): sisa jarak rute + kecepatan + ETA.
+    double remaining = _distance.distance(me, steps[_next].location);
+    for (var k = _next; k < steps.length - 1; k++) {
+      remaining += _distance.distance(steps[k].location, steps[k + 1].location);
+    }
+    // ETA dari kecepatan sekarang; kalau pelan/berhenti, ETA tidak diketahui.
+    final etaMin = _speedKmh > 5 ? (remaining / 1000 / _speedKmh * 60).round() : -1;
+    _sendNavInfo(remaining.round(), _speedKmh.round(), etaMin);
   }
 
   void _send(String text, {bool force = false}) {
@@ -83,6 +134,19 @@ class NavInstructor extends ChangeNotifier {
     _lastSent = text;
     _lastSentAt = now;
     unawaited(bleService.sendNav(text));
+  }
+
+  /// Kirim "sisaMeter|kmh|etaMenit" ke c209, paling cepat tiap 2 detik
+  /// dan hanya kalau nilainya berubah (sudah dibulatkan ke int).
+  void _sendNavInfo(int sisa, int kmh, int eta) {
+    if (!bleService.isConnected) return;
+    final text = '$sisa|$kmh|$eta';
+    final now = DateTime.now();
+    if (text == _lastNavInfoSent) return;
+    if (now.difference(_lastNavInfoAt).inSeconds < 2) return;
+    _lastNavInfoSent = text;
+    _lastNavInfoAt = now;
+    unawaited(bleService.sendNavInfo(text));
   }
 
   static String _fmt(double m) {

@@ -19,7 +19,14 @@ class HomePage extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
             children: [
-              Center(child: Text('ESP32 Maps', style: tt.headlineMedium?.copyWith(fontWeight: FontWeight.w600))),
+              Center(
+                child: Text(
+                  'ESP32 Maps',
+                  style: tt.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
               const SizedBox(height: 32),
               Card(
                 margin: EdgeInsets.zero,
@@ -29,17 +36,34 @@ class HomePage extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Icon(Icons.circle, size: 12, color: s.bleConnected ? cs.primary : cs.outline),
+                          Icon(
+                            Icons.circle,
+                            size: 12,
+                            color: s.bleConnected ? cs.primary : cs.outline,
+                          ),
                           const SizedBox(width: 10),
-                          Text(s.statusLabel, style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
+                          Text(
+                            s.statusLabel,
+                            style: tt.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           const Spacer(),
-                          Text(s.deviceName,
-                              style: tt.titleSmall?.copyWith(letterSpacing: 0.5, fontWeight: FontWeight.w500)),
+                          Text(
+                            s.deviceName,
+                            style: tt.titleSmall?.copyWith(
+                              letterSpacing: 0.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ],
                       ),
                       const SizedBox(height: 20),
-                      _InfoRow('BLE', s.bleConnected ? 'Connected' : 'Disconnected'),
-                      _InfoRow('Wi-Fi', s.wifiIp ?? (s.wifiSentSsid != null ? 'Terkirim: ${s.wifiSentSsid}' : '—')),
+                      _InfoRow(
+                        'BLE',
+                        s.bleConnected ? 'Connected' : 'Disconnected',
+                      ),
+                      _InfoRow('Wi-Fi', s.wifiSsid ?? '—'),
                       _InfoRow('Sync', s.syncReady ? 'Ready' : '—'),
                     ],
                   ),
@@ -54,12 +78,19 @@ class HomePage extends StatelessWidget {
               const SizedBox(height: 28),
               Padding(
                 padding: const EdgeInsets.only(left: 8, bottom: 12),
-                child: Text('Connection',
-                    style: tt.titleMedium?.copyWith(color: cs.primary, fontWeight: FontWeight.w500)),
+                child: Text(
+                  'Connection',
+                  style: tt.titleMedium?.copyWith(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
               OutlinedButton.icon(
                 onPressed: s.toggleConnection,
-                icon: Icon(s.bleConnected ? Icons.bluetooth_disabled : Icons.bluetooth),
+                icon: Icon(
+                  s.bleConnected ? Icons.bluetooth_disabled : Icons.bluetooth,
+                ),
                 label: Text(s.bleConnected ? 'Disconnect' : 'Connect'),
               ),
               const SizedBox(height: 16),
@@ -83,50 +114,73 @@ class HomePage extends StatelessWidget {
       isScrollControlled: true,
       showDragHandle: true,
       builder: (ctx) => Padding(
-        padding: EdgeInsets.fromLTRB(24, 8, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          8,
+          24,
+          MediaQuery.of(ctx).viewInsets.bottom + 24,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Hotspot Setup', style: Theme.of(ctx).textTheme.titleLarge),
             const SizedBox(height: 4),
-            Text('Kirim kredensial Wi-Fi ke ESP32 lewat BLE. Pakai jaringan/hotspot 2,4 GHz (ESP32 tidak mendukung 5 GHz).',
-                style: Theme.of(ctx).textTheme.bodyMedium),
+            Text(
+              'Kirim kredensial Wi-Fi ke ESP32 lewat BLE. Pakai jaringan/hotspot 2,4 GHz (ESP32 tidak mendukung 5 GHz).',
+              style: Theme.of(ctx).textTheme.bodyMedium,
+            ),
             const SizedBox(height: 20),
             TextField(
               controller: ssid,
-              decoration: const InputDecoration(labelText: 'SSID', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                labelText: 'SSID',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: pass,
               obscureText: true,
-              decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                labelText: 'Password',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 20),
             // Tombol "Kirim ke ESP32" yang ganda sudah dihapus, sisa satu yang benar:
             FilledButton(
               onPressed: () async {
                 final ssidText = ssid.text.trim();
-                final passText = pass.text; // jangan di-trim: spasi bisa bagian dari password
+                final passText = pass
+                    .text; // jangan di-trim: spasi bisa bagian dari password
                 final messenger = ScaffoldMessenger.of(context);
                 final nav = Navigator.of(ctx);
 
                 if (ssidText.isEmpty) return;
                 if (ssidText.contains('|')) {
                   messenger.showSnackBar(
-                    const SnackBar(content: Text("SSID tidak boleh mengandung karakter '|'")),
+                    const SnackBar(
+                      content: Text("SSID tidak boleh mengandung karakter '|'"),
+                    ),
                   );
                   return;
                 }
 
-                final ok = await bleService.sendWifiCredentials(ssidText, passText);
+                final ok = await bleService.sendWifiCredentials(
+                  ssidText,
+                  passText,
+                );
                 nav.pop();
-                messenger.showSnackBar(SnackBar(
-                  content: Text(ok
-                      ? 'Terkirim. ESP32 mencoba tersambung (sekitar 20 detik)…'
-                      : 'Gagal mengirim. Pastikan Bluetooth tersambung ke ESP32.'),
-                ));
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      ok
+                          ? 'Terkirim. ESP32 mencoba tersambung (sekitar 20 detik)…'
+                          : 'Gagal mengirim. Pastikan Bluetooth tersambung ke ESP32.',
+                    ),
+                  ),
+                );
                 if (ok) {
                   appState.markWifiSent(ssidText);
                   appState.startWifiPolling();
@@ -153,7 +207,13 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          SizedBox(width: 96, child: Text(label, style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant))),
+          SizedBox(
+            width: 96,
+            child: Text(
+              label,
+              style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ),
           Text(value, style: tt.titleMedium),
         ],
       ),

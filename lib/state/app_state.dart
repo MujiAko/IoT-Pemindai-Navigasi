@@ -2,10 +2,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:notification_listener_service/notification_listener_service.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../ble_service.dart';
 import '../services/nav_instructor.dart';
 import '../services/notification_forwarder.dart';
+import '../services/map_streamer.dart';
 
 enum RouteProfile { driving, walking, cycling }
 
@@ -16,22 +18,26 @@ extension RouteProfileX on RouteProfile {
 }
 
 extension MapStyleX on MapStyle {
-  String get label => const ['OpenStreetMap', 'Carto Light', 'Carto Dark'][index];
+  String get label =>
+      const ['OpenStreetMap', 'Carto Light', 'Carto Dark'][index];
   String get url => const [
-        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-        'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
-        'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      ][index];
-  List<String> get subdomains => this == MapStyle.osm ? const [] : const ['a', 'b', 'c', 'd'];
+    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
+    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  ][index];
+  List<String> get subdomains =>
+      this == MapStyle.osm ? const [] : const ['a', 'b', 'c', 'd'];
 }
 
 class AppState extends ChangeNotifier {
   AppState() {
     // ESP32 putus sendiri (mati, restart, keluar jangkauan) -> tampilan ikut berubah.
     bleService.onDisconnected = () {
+      mapStreamer.stop();
       bleConnected = false;
       syncReady = false;
       wifiIp = null;
+      wifiSsid = null;
       wifiSentSsid = null;
       deviceName = 'Tidak Terhubung';
       notifyListeners();
@@ -43,6 +49,7 @@ class AppState extends ChangeNotifier {
   }
 
   final NavInstructor nav = NavInstructor();
+  final MapStreamer mapStreamer = MapStreamer();
   late final NotificationForwarder _forwarder = NotificationForwarder(this);
 
   // App settings
@@ -51,17 +58,21 @@ class AppState extends ChangeNotifier {
   RouteProfile profile = RouteProfile.driving;
   bool haptic = true;
   bool forwardNotifications = true;
-  bool notificationAccess = false; // dibaca dari izin Notification Listener Android
+  bool notificationAccess =
+      false; // dibaca dari izin Notification Listener Android
   String notificationDuration = 'Dynamic (auto)'; // belum didukung firmware
-  Map<String, String> notifApps = {}; // packageName -> nama aplikasi (whitelist)
+  Map<String, String> notifApps =
+      {}; // packageName -> nama aplikasi (whitelist)
   int get whitelistedApps => notifApps.length;
 
   // ESP32 status (data asli via BLE)
   String deviceName = 'Tidak Terhubung';
   bool bleConnected = false;
   bool connecting = false;
-  String? wifiIp; // diisi dari characteristic status firmware (c207), null = belum tersambung
-  String? wifiSentSsid; // SSID terakhir yang dikirim ke ESP32 (firmware lama tidak melaporkan hasilnya)
+  String? wifiIp;
+  String? wifiSsid;
+  String?
+  wifiSentSsid; // SSID terakhir yang dikirim ke ESP32 (firmware lama tidak melaporkan hasilnya)
   bool syncReady = false;
 
   // Pengaturan ESP32. Nilai awal disamakan dengan default firmware
@@ -90,6 +101,17 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
+  int _qualityFromEsp() {
+    final m = RegExp(r'\((\d+)\)').firstMatch(esp['Image quality'] ?? '');
+    return int.tryParse(m?.group(1) ?? '65') ?? 65;
+  }
+
+  Duration _intervalFromEsp() {
+    final m = RegExp(r'^([\d.]+)s').firstMatch(esp['Map update'] ?? '');
+    final s = double.tryParse(m?.group(1) ?? '1') ?? 1;
+    return Duration(milliseconds: (s * 1000).round());
+  }
+
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     themeMode = ThemeMode.values[p.getInt('theme') ?? 1];
@@ -102,7 +124,8 @@ class AppState extends ChangeNotifier {
     }
     try {
       final raw = p.getString('notifApps');
-      if (raw != null) notifApps = Map<String, String>.from(jsonDecode(raw) as Map);
+      if (raw != null)
+        notifApps = Map<String, String>.from(jsonDecode(raw) as Map);
     } catch (_) {}
     notifyListeners();
     _forwarder.start(); // cek izin notifikasi & mulai meneruskan
@@ -127,7 +150,8 @@ class AppState extends ChangeNotifier {
     _save();
   }
 
-  String get statusLabel => !bleConnected ? 'Disconnected' : (syncReady ? 'Ready' : 'Syncing');
+  String get statusLabel =>
+      !bleConnected ? 'Disconnected' : (syncReady ? 'Ready' : 'Syncing');
 
   // ------------------------------------------------------------- koneksi BLE
   Future<void> toggleConnection() async {
@@ -135,9 +159,11 @@ class AppState extends ChangeNotifier {
 
     if (bleConnected) {
       await bleService.disconnectDevice();
+      mapStreamer.stop();
       update(() {
         bleConnected = false;
         wifiIp = null;
+        wifiSsid = null;
         wifiSentSsid = null;
         syncReady = false;
         deviceName = 'Tidak Terhubung';
@@ -147,6 +173,17 @@ class AppState extends ChangeNotifier {
 
     connecting = true;
     update(() => deviceName = 'Mencari ESP32...');
+
+    // Bluetooth mati -> minta nyalain dulu (muncul prompt sistem Android).
+    // Kalau user menolak, connect lanjut dan akan gagal seperti biasa.
+    // Sengaja TIDAK ada auto-mati Bluetooth pas disconnect: itu bakal
+    // mutusin earbud/jam/perangkat BT lain juga.
+    try {
+      if (await FlutterBluePlus.adapterState.first ==
+          BluetoothAdapterState.off) {
+        await FlutterBluePlus.turnOn();
+      }
+    } catch (_) {}
 
     // connectToEsp32 sudah menunggu scan + connect + kirim nama HP & baterai,
     // jadi tidak perlu menunggu waktu tetap lagi.
@@ -182,14 +219,25 @@ class AppState extends ChangeNotifier {
   /// Berhenti kalau firmware belum punya characteristic itu.
   Future<void> startWifiPolling() async {
     for (var i = 0; i < 15 && bleConnected; i++) {
-      final ip = await bleService.readWifiIp();
-      if (ip == null) return; // firmware belum punya characteristic status (c207)
-      final baru = ip.isEmpty ? null : ip;
-      if (baru != wifiIp) {
-        wifiIp = baru;
+      final status = await bleService.readWifiStatus();
+      if (status == null) return; // firmware belum punya c207
+      final ssidBaru = status.ssid.isEmpty ? null : status.ssid;
+      final ipBaru = status.ip.isEmpty ? null : status.ip;
+      if (ssidBaru != wifiSsid || ipBaru != wifiIp) {
+        wifiSsid = ssidBaru;
+        wifiIp = ipBaru;
         notifyListeners();
       }
-      if (baru != null) return;
+      if (ipBaru != null) {
+        // Coba nyalain streamer; kalau gagal (mis. firmware belum ada
+        // server peta), coba lagi di polling berikutnya.
+        final ok = await mapStreamer.start(
+          espIp: ipBaru,
+          interval: _intervalFromEsp(),
+          quality: _qualityFromEsp(),
+        );
+        if (ok) return;
+      }
       await Future.delayed(const Duration(seconds: 2));
     }
   }
