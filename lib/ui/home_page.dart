@@ -111,33 +111,68 @@ class HomePage extends StatelessWidget {
   }
 
   Future<void> _onHotspotSetupTap(BuildContext context) async {
-  final allow = await showDialog<bool>(
+  final allow = await showModalBottomSheet<bool>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      icon: const Icon(Icons.wifi_rounded, size: 36),
-      title: const Text('Nyalakan Hotspot?'),
-      content: const Text(
-        'Izinkan menyalakan hotspot HP agar ESP32 bisa tersambung?\n\n'
-        'Kamu akan diarahkan ke pengaturan hotspot HP. Nyalakan hotspot 2,4 GHz di sana, lalu kembali ke aplikasi.',
+    backgroundColor: const Color(0xFF1F1F23),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(32, 36, 32, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.wifi_rounded, size: 40, color: Color(0xFF8AB4F8)),
+            const SizedBox(height: 24),
+            Text.rich(
+              const TextSpan(
+                style: TextStyle(color: Colors.white, fontSize: 17, height: 1.35),
+                children: [
+                  TextSpan(text: 'Allow '),
+                  TextSpan(
+                    text: 'ESP32 Maps',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  TextSpan(text: ' to turn on the phone hotspot so the ESP32 can connect?'),
+                ],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            _permissionChoice(ctx, 'Allow', true),
+            _permissionChoice(ctx, "Don't allow", false),
+          ],
+        ),
       ),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Izinkan')),
-      ],
     ),
   );
-  
   if (allow != true || !context.mounted) return;
 
-    try {
-      await _hotspotChannel.invokeMethod('openHotspotSettings');
-    } on PlatformException {
-      // Bukan Android / pengaturan tidak tersedia -> lanjut ke form saja.
-    } on MissingPluginException {
-      // MainActivity belum dipasang channel-nya -> lanjut ke form saja.
-    }
-    if (!context.mounted) return;
-    _hotspotSheet(context);
+  try {
+    await _hotspotChannel.invokeMethod('openHotspotSettings');
+  } on PlatformException {
+    // Bukan Android / pengaturan tidak tersedia -> lanjut ke form saja.
+  } on MissingPluginException {
+    // MainActivity belum dipasang channel-nya -> lanjut ke form saja.
+  }
+  if (!context.mounted) return;
+  _hotspotSheet(context);
+}
+
+Widget _permissionChoice(BuildContext ctx, String label, bool value) {
+  return SizedBox(
+    width: double.infinity,
+    child: TextButton(
+      onPressed: () => Navigator.pop(ctx, value),
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+      ),
+      child: Text(label),
+    ),
+  );
 }
 
   void _hotspotSheet(BuildContext context) {
