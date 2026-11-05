@@ -107,8 +107,9 @@ class HomePage extends StatelessWidget {
   }
 
   void _hotspotSheet(BuildContext context) {
-    final ssid = TextEditingController();
-    final pass = TextEditingController();
+    final ssid = TextEditingController(text: appState.hotspotSsid);
+    final pass = TextEditingController(text: appState.hotspotPassword);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -181,7 +182,9 @@ class HomePage extends StatelessWidget {
                     ),
                   ),
                 );
+
                 if (ok) {
+                  await appState.saveHotspotCredentials(ssidText, passText);
                   appState.markWifiSent(ssidText);
                   appState.startWifiPolling();
                 }
