@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import '../main.dart' show appState;
 import '../ble_service.dart';
+import 'package:flutter/services.dart';
+
+const _hotspotChannel = MethodChannel('iot_pemindai_navigasi/hotspot');
+
 
 class HomePage extends StatelessWidget {
   final VoidCallback onOpenMap;
@@ -95,7 +99,7 @@ class HomePage extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               OutlinedButton.icon(
-                onPressed: () => _hotspotSheet(context),
+                onPressed: () => _onHotspotSetupTap(context),
                 icon: const Icon(Icons.wifi_rounded),
                 label: const Text('Hotspot Setup'),
               ),
@@ -105,6 +109,36 @@ class HomePage extends StatelessWidget {
       },
     );
   }
+
+  Future<void> _onHotspotSetupTap(BuildContext context) async {
+  final allow = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.wifi_rounded, size: 36),
+      title: const Text('Nyalakan Hotspot?'),
+      content: const Text(
+        'Izinkan menyalakan hotspot HP agar ESP32 bisa tersambung?\n\n'
+        'Kamu akan diarahkan ke pengaturan hotspot HP. Nyalakan hotspot 2,4 GHz di sana, lalu kembali ke aplikasi.',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Batal')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Izinkan')),
+      ],
+    ),
+  );
+  
+  if (allow != true || !context.mounted) return;
+
+    try {
+      await _hotspotChannel.invokeMethod('openHotspotSettings');
+    } on PlatformException {
+      // Bukan Android / pengaturan tidak tersedia -> lanjut ke form saja.
+    } on MissingPluginException {
+      // MainActivity belum dipasang channel-nya -> lanjut ke form saja.
+    }
+    if (!context.mounted) return;
+    _hotspotSheet(context);
+}
 
   void _hotspotSheet(BuildContext context) {
     final ssid = TextEditingController();
