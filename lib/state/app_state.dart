@@ -41,6 +41,8 @@ class AppState extends ChangeNotifier {
       wifiSentSsid = null;
       deviceName = 'Tidak Terhubung';
       notifyListeners();
+      // Putus bukan karena user: coba sambung ulang otomatis.
+      if (!_userDisconnect) _autoReconnect();
     };
     // Getar saat berpindah ke manuver berikutnya (kalau Haptic feedback aktif).
     nav.onStepChanged = () {
@@ -50,6 +52,8 @@ class AppState extends ChangeNotifier {
 
   final NavInstructor nav = NavInstructor();
   final MapStreamer mapStreamer = MapStreamer();
+  bool _userDisconnect = false; // true kalau user sendiri yang memutus
+  bool _reconnecting = false;
   late final NotificationForwarder _forwarder = NotificationForwarder(this);
 
   // App settings
@@ -158,6 +162,7 @@ class AppState extends ChangeNotifier {
     if (connecting) return;
 
     if (bleConnected) {
+      _userDisconnect = true; // putus sengaja: jangan auto-reconnect
       await bleService.disconnectDevice();
       mapStreamer.stop();
       update(() {
@@ -172,6 +177,7 @@ class AppState extends ChangeNotifier {
     }
 
     connecting = true;
+    _userDisconnect = false;
     update(() => deviceName = 'Mencari ESP32...');
 
     // Bluetooth mati -> minta nyalain dulu (muncul prompt sistem Android).
@@ -204,6 +210,25 @@ class AppState extends ChangeNotifier {
         syncReady = false;
         deviceName = 'Gagal Terhubung';
       });
+    }
+  }
+
+  /// Sambung ulang BLE otomatis kalau putus sendiri (ESP32 restart, link
+  /// hilang, dsb). Maks 6 percobaan dengan jeda 2, 4, 6, 8, 10, 12 detik.
+  /// Berhenti kalau user menekan disconnect atau sudah tersambung lagi.
+  Future<void> _autoReconnect() async {
+    if (_reconnecting) return;
+    _reconnecting = true;
+    try {
+      for (var i = 0; i < 6; i++) {
+        await Future.delayed(Duration(seconds: 2 + i * 2));
+        if (_userDisconnect || bleConnected) return;
+        if (connecting) continue; // user lagi menyambung manual
+        await toggleConnection(); // belum terhubung -> ini mencoba connect
+        if (bleConnected) return;
+      }
+    } finally {
+      _reconnecting = false;
     }
   }
 
