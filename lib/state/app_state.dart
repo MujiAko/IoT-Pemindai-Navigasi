@@ -78,6 +78,9 @@ class AppState extends ChangeNotifier {
   String?
   wifiSentSsid; // SSID terakhir yang dikirim ke ESP32 (firmware lama tidak melaporkan hasilnya)
   bool syncReady = false;
+  String hotspotSsid = '';
+  String hotspotPassword = '';
+  bool get hasSavedHotspot => hotspotSsid.isNotEmpty;
 
   // Pengaturan ESP32. Nilai awal disamakan dengan default firmware
   // (tema terang, kualitas 65, interval 1 detik).
@@ -123,6 +126,9 @@ class AppState extends ChangeNotifier {
     profile = RouteProfile.values[p.getInt('profile') ?? 0];
     haptic = p.getBool('haptic') ?? true;
     forwardNotifications = p.getBool('fwd') ?? true;
+    hotspotSsid = p.getString('hotspotSsid') ?? '';
+    hotspotPassword = p.getString('hotspotPassword') ?? '';
+
     for (final k in esp.keys.toList()) {
       esp[k] = p.getString('esp_$k') ?? esp[k]!;
     }
@@ -142,6 +148,9 @@ class AppState extends ChangeNotifier {
     await p.setInt('profile', profile.index);
     await p.setBool('haptic', haptic);
     await p.setBool('fwd', forwardNotifications);
+    await p.setString('hotspotSsid', hotspotSsid);
+    await p.setString('hotspotPassword', hotspotPassword);
+
     for (final e in esp.entries) {
       await p.setString('esp_${e.key}', e.value);
     }
@@ -284,6 +293,14 @@ class AppState extends ChangeNotifier {
     wifiSentSsid = ssid;
     notifyListeners();
   }
+  
+  Future<void> saveHotspotCredentials(String ssid, String password) async {
+  hotspotSsid = ssid;
+  hotspotPassword = password;
+  notifyListeners();
+  await _save();
+}
+
 
   // ------------------------------------------------------------- notifikasi
   Future<void> refreshNotificationAccess() async {

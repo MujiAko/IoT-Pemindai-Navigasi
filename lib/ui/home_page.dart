@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import '../main.dart' show appState;
 import '../ble_service.dart';
+import 'package:flutter/services.dart';
+
+const _hotspotChannel = MethodChannel('iot_pemindai_navigasi/hotspot');
+
 
 class HomePage extends StatelessWidget {
   final VoidCallback onOpenMap;
@@ -95,7 +99,7 @@ class HomePage extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               OutlinedButton.icon(
-                onPressed: () => _hotspotSheet(context),
+                onPressed: () => _onHotspotSetupTap(context),
                 icon: const Icon(Icons.wifi_rounded),
                 label: const Text('Hotspot Setup'),
               ),
@@ -106,9 +110,75 @@ class HomePage extends StatelessWidget {
     );
   }
 
+  Future<void> _onHotspotSetupTap(BuildContext context) async {
+  final allow = await showModalBottomSheet<bool>(
+    context: context,
+    backgroundColor: const Color(0xFF1F1F23),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(32, 36, 32, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.wifi_rounded, size: 40, color: Color(0xFF8AB4F8)),
+            const SizedBox(height: 24),
+            Text.rich(
+              const TextSpan(
+                style: TextStyle(color: Colors.white, fontSize: 17, height: 1.35),
+                children: [
+                  TextSpan(text: 'Allow '),
+                  TextSpan(
+                    text: 'ESP32 Maps',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  TextSpan(text: ' to turn on the phone hotspot so the ESP32 can connect?'),
+                ],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            _permissionChoice(ctx, 'Allow', true),
+            _permissionChoice(ctx, "Don't allow", false),
+          ],
+        ),
+      ),
+    ),
+  );
+  if (allow != true || !context.mounted) return;
+
+  try {
+    await _hotspotChannel.invokeMethod('openHotspotSettings');
+  } on PlatformException {
+    // Bukan Android / pengaturan tidak tersedia -> lanjut ke form saja.
+  } on MissingPluginException {
+    // MainActivity belum dipasang channel-nya -> lanjut ke form saja.
+  }
+  if (!context.mounted) return;
+  _hotspotSheet(context);
+}
+
+Widget _permissionChoice(BuildContext ctx, String label, bool value) {
+  return SizedBox(
+    width: double.infinity,
+    child: TextButton(
+      onPressed: () => Navigator.pop(ctx, value),
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+      ),
+      child: Text(label),
+    ),
+  );
+}
+
   void _hotspotSheet(BuildContext context) {
-    final ssid = TextEditingController();
-    final pass = TextEditingController();
+    final ssid = TextEditingController(text: appState.hotspotSsid);
+    final pass = TextEditingController(text: appState.hotspotPassword);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -181,7 +251,9 @@ class HomePage extends StatelessWidget {
                     ),
                   ),
                 );
+
                 if (ok) {
+                  await appState.saveHotspotCredentials(ssidText, passText);
                   appState.markWifiSent(ssidText);
                   appState.startWifiPolling();
                 }
